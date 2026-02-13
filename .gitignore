@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.venv/
+env/
+venv/
+*.log
+*.zip
+*.tar
+*.pth
+*.pt
+*.onnx
+*.bin
+*.ckpt
+.DS_Store
