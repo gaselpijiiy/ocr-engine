@@ -1,22 +1,55 @@
 from fastapi import FastAPI, UploadFile, File
 import shutil
-from app.ocr_service import extract_text
+import pika
+import json
+import os
+import uuid
 
 app = FastAPI()
 
-@app.get("/")
-def read_root():
-    return {"message": "OCR API is running"}
+RABBITMQ_HOST = "localhost"
+QUEUE_NAME = "ocr_queue"
+
+UPLOAD_DIR = "data/uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
 
 @app.post("/ocr")
 async def run_ocr(file: UploadFile = File(...)):
-    temp_file = "temp.jpg"
+    try:
+        # buat nama file unik
+        unique_name = f"{uuid.uuid4()}_{file.filename}"
+        file_path = os.path.abspath(os.path.join(UPLOAD_DIR, unique_name))
 
-    with open(temp_file, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+        # simpan file
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
 
-    text = extract_text(temp_file)
+        # koneksi ke RabbitMQ
+        connection = pika.BlockingConnection(
+            pika.ConnectionParameters(host=RABBITMQ_HOST)
+        )
+        channel = connection.channel()
+        channel.queue_declare(queue=QUEUE_NAME)
 
-    return {"text": text}
+        # queue
+        message = {"image_path": file_path}
+        channel.basic_publish(
+            exchange="",
+            routing_key=QUEUE_NAME,
+            body=json.dumps(message)
+        )
 
-# test main.py
+        connection.close()
+
+        return {
+            "status": "queued",
+            "filename": unique_name,
+            "path": file_path
+        }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }
