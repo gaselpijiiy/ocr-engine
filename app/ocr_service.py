@@ -1,22 +1,13 @@
 from paddleocr import PaddleOCR
 
-# WAJIB ADA — ini yang bikin objek OCR
-ocr = PaddleOCR(
-    use_angle_cls=True,
-    lang='en'
-)
+# load model sekali saat worker start
+ocr = PaddleOCR(use_angle_cls=True, lang="en")
 
 def extract_text(image_path):
+    result = ocr.ocr(image_path)
+    text = ""
 
-    result = ocr.ocr(image_path, cls=True)
+    for line in result[0]:
+        text += line[1][0] + " "
 
-    lines = []
-
-    for line in result:
-        if not line:
-            continue
-
-        for word in line:
-            lines.append(word[1][0])
-
-    return "\n".join(lines)
+    return text

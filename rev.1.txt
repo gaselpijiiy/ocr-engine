@@ -1,0 +1,7 @@
+1. cari tau cara post man untuk mengubah request menjadi sebuah responnya seperti apa 
+2. harus ada messege queueing (menambah kompleksitas sampe 5X) menjadi assyncorenus menggunakan rabbit mq
+3. data nya di buat berbagai macam (entah rusak atau kotor atau bagaimanapun itu) 
+4. file yang banyak di gunakan pdf 
+5. perkuat sisi akurasi nya
+6. testing paddle sampe limit dan gabnisa di test lagi (melalui hitungan kata) 
+7. stress test untuk mengetahui limit dari ocr nya
