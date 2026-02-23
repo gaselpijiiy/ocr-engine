@@ -75,3 +75,35 @@ async def get_result(job_id: str):
 
     with open(result_path, "r") as f:
         return json.load(f)
+    
+def extract_text(file_path):
+
+    ext = file_path.lower().split(".")[-1]
+
+    # ✅ IMAGE
+    if ext in ["jpg", "jpeg", "png"]:
+        return extract_text_from_image(file_path)
+
+    # ✅ PDF (SCAN)
+    elif ext == "pdf":
+
+        images = convert_from_path(
+            file_path,
+            poppler_path=r"C:\poppler\Library\bin"   # <<< WAJIB DIISI
+        )
+
+        full_text = []
+
+        for i, image in enumerate(images):
+            temp_img = f"temp_page_{i}.jpg"
+            image.save(temp_img, "JPEG")
+
+            text = extract_text_from_image(temp_img)
+            full_text.append(text)
+
+            os.remove(temp_img)
+
+        return "\n\n".join(full_text)
+
+    else:
+        return "Unsupported file type"
