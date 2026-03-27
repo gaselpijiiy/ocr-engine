@@ -5,3 +5,14 @@
 5. perkuat sisi akurasi nya
 6. testing paddle sampe limit dan gabnisa di test lagi (melalui hitungan kata) 
 7. stress test untuk mengetahui limit dari ocr nya
+
+1. skrg kalian ngirim pdfnya pk python
+2. cari tahu kenapa ada satu baris yang hilang
+3. bikinin script dockercompose
+
+
+
+query = "What do elephants eat?"
+query = "How much food do elephants consume?"
+query = "How long do elephants live?"
+query = "How do elephants regulate temperature?"
