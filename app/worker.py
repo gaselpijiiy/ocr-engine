@@ -2,6 +2,7 @@ import os
 import json
 import pika
 from app.services.ocr.ocr_service import OCRService
+from app.services.text_cleaning import clean_text   # ✅ perbaikan import
 
 print("🚀 WORKER STARTED")
 
@@ -25,15 +26,24 @@ def callback(ch, method, properties, body):
 
         print(f"[WORKER] Processing job {job_id}")
 
-        # Jalankan Smart OCR
+        # 🔹 Jalankan OCR
         result = ocr_service.extract(file_path, job_id)
 
-        # Simpan hasil
+        # 🔹 Ambil text dari hasil OCR
+        raw_text = result.get("text", "")
+
+        # 🔹 Cleaning text
+        cleaned_text = clean_text(raw_text)
+
+        # 🔹 Update result dengan text yang sudah clean
+        result["text"] = cleaned_text
+
+        # 🔹 Simpan hasil
         result_path = os.path.join(RESULT_DIR, f"{job_id}.json")
         with open(result_path, "w", encoding="utf-8") as f:
             json.dump(result, f, ensure_ascii=False, indent=2)
 
-        print(f"[WORKER] Job {job_id} completed")
+        print(f"[WORKER] Job {job_id} completed ✅")
 
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
@@ -43,8 +53,11 @@ def callback(ch, method, properties, body):
 
 
 def start_worker():
-    connection = pika.BlockingConnection(pika.ConnectionParameters(host=RABBITMQ_HOST))
+    connection = pika.BlockingConnection(
+        pika.ConnectionParameters(host=RABBITMQ_HOST)
+    )
     channel = connection.channel()
+
     channel.queue_declare(queue=QUEUE_NAME, durable=True)
     channel.basic_qos(prefetch_count=1)
     channel.basic_consume(queue=QUEUE_NAME, on_message_callback=callback)
