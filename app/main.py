@@ -4,6 +4,9 @@ import pika
 import json
 import os
 import uuid
+from PIL import Image
+from pdf2image import convert_from_path
+import pytesseract
 
 app = FastAPI()
 
@@ -75,7 +78,18 @@ async def get_result(job_id: str):
 
     with open(result_path, "r") as f:
         return json.load(f)
-    
+
+
+def extract_text_from_image(file_path):
+    """Extract text from an image using OCR."""
+    try:
+        image = Image.open(file_path)
+        text = pytesseract.image_to_string(image)
+        return text
+    except Exception as e:
+        return f"Error extracting text: {str(e)}"
+
+
 def extract_text(file_path):
 
     ext = file_path.lower().split(".")[-1]
@@ -89,7 +103,10 @@ def extract_text(file_path):
 
         images = convert_from_path(
             file_path,
-            poppler_path=r"C:\poppler\Library\bin"   # <<< WAJIB DIISI
+            dpi=300,
+            fmt="jpeg",
+            thread_count=2,
+            poppler_path=r"C:\poppler\Library\bin"
         )
 
         full_text = []
