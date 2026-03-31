@@ -4,9 +4,6 @@ import pika
 import json
 import os
 import uuid
-from PIL import Image
-from pdf2image import convert_from_path
-import pytesseract
 
 app = FastAPI()
 
@@ -51,7 +48,7 @@ async def run_ocr(file: UploadFile = File(...)):
             routing_key=QUEUE_NAME,
             body=json.dumps(message),
             properties=pika.BasicProperties(
-                delivery_mode=2  # persistent message
+                delivery_mode=2  # persistent
             )
         )
 
@@ -78,49 +75,3 @@ async def get_result(job_id: str):
 
     with open(result_path, "r") as f:
         return json.load(f)
-
-
-def extract_text_from_image(file_path):
-    """Extract text from an image using OCR."""
-    try:
-        image = Image.open(file_path)
-        text = pytesseract.image_to_string(image)
-        return text
-    except Exception as e:
-        return f"Error extracting text: {str(e)}"
-
-
-def extract_text(file_path):
-
-    ext = file_path.lower().split(".")[-1]
-
-    # ✅ IMAGE
-    if ext in ["jpg", "jpeg", "png"]:
-        return extract_text_from_image(file_path)
-
-    # ✅ PDF (SCAN)
-    elif ext == "pdf":
-
-        images = convert_from_path(
-            file_path,
-            dpi=300,
-            fmt="jpeg",
-            thread_count=2,
-            poppler_path=r"C:\poppler\Library\bin"
-        )
-
-        full_text = []
-
-        for i, image in enumerate(images):
-            temp_img = f"temp_page_{i}.jpg"
-            image.save(temp_img, "JPEG")
-
-            text = extract_text_from_image(temp_img)
-            full_text.append(text)
-
-            os.remove(temp_img)
-
-        return "\n\n".join(full_text)
-
-    else:
-        return "Unsupported file type"
