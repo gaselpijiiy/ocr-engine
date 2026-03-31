@@ -32,6 +32,9 @@ def callback(ch, method, properties, body):
         # 🔹 Ambil text dari hasil OCR
         raw_text = result.get("text", "")
 
+        if not raw_text.strip():
+            raise ValueError("OCR returned empty text")
+
         # 🔹 Cleaning text
         cleaned_text = clean_text(raw_text)
 
