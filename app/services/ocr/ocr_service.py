@@ -92,43 +92,34 @@ class OCRService:
         if not processed:
             return []
 
-        # Deteksi layout
-        page_width   = max(b["x_right"] for b in processed)
-        widths       = sorted(b["width"] for b in processed)
-        median_width = widths[len(widths) // 2]
-        is_single_column = (page_width > 0) and (median_width / page_width >= 0.55)
-
-        # Sort by y_top dulu (berlaku untuk single maupun multi-column)
+        # Sort by y_top
         processed.sort(key=lambda b: b["y_top"])
 
         if len(processed) < 2:
             return [b["line"] for b in processed]
 
-        # Hitung threshold dari distribusi gap aktual
-        y_tops = [b["y_top"] for b in processed]
-        gaps = [y_tops[i+1] - y_tops[i] for i in range(len(y_tops)-1)]
-        nonzero_gaps = [g for g in gaps if g > 0]
-
-        if not nonzero_gaps:
-            processed.sort(key=lambda b: b["x_left"])
-            return [b["line"] for b in processed]
-
-        median_gap = sorted(nonzero_gaps)[len(nonzero_gaps) // 2]
-
-        # Threshold = 0.5x median_gap
-        row_threshold = max(median_gap * 0.5, 4)
-
-        # Build clusters sequentially berdasarkan gap
-        row_clusters  = []
+        # Overlap-based row clustering:
+        # Dua box dianggap se-baris jika rentang vertikal mereka OVERLAP (intersection > 0).
+        # Lebih akurat dari gap-based karena:
+        # - Fragmen italic/bold punya y_top sedikit berbeda tapi masih overlap → same row ✓
+        # - Box dari baris berbeda tidak pernah overlap → cleanly separated ✓
+        # Cluster representative: track y_top_min dan y_bot_max dari semua box di cluster.
+        row_clusters = []
         current_cluster = [processed[0]]
+        c_ytop = processed[0]["y_top"]
+        c_ybot = processed[0]["y_bot"]
 
         for box in processed[1:]:
-            gap = box["y_top"] - current_cluster[-1]["y_top"]
-            if gap <= row_threshold:
+            overlap = min(c_ybot, box["y_bot"]) - max(c_ytop, box["y_top"])
+            if overlap > 0:
                 current_cluster.append(box)
+                c_ytop = min(c_ytop, box["y_top"])
+                c_ybot = max(c_ybot, box["y_bot"])
             else:
                 row_clusters.append(current_cluster)
                 current_cluster = [box]
+                c_ytop = box["y_top"]
+                c_ybot = box["y_bot"]
         row_clusters.append(current_cluster)
 
         # Sort antar cluster top-to-bottom; dalam cluster left-to-right
@@ -143,38 +134,16 @@ class OCRService:
     
     # EKSTRAKSI TEKS
     def _extract_text(self, result):
-
-        # DEBUG raw boxes sebelum sort
-        if result and result[0]:
-            print(f"[DEBUG] Raw boxes dari PaddleOCR: {len(result[0])}")
-            for i, line in enumerate(result[0]):
-                box   = line[0]
-                y_top = min(p[1] for p in box)
-                y_bot = max(p[1] for p in box)
-                x_left = min(p[0] for p in box)
-                text  = line[1][0]
-                conf  = line[1][1]
-                print(f"  raw[{i:02d}] y={y_top:.0f}-{y_bot:.0f} x={x_left:.0f} conf={conf:.2f} | {text[:50]}")
-        
-
         lines = self._sort_lines(result)
         if not lines:
             return "", 0.0
 
-        # DEBUG setelah sort
-        print(f"[DEBUG] Total baris terdeteksi: {len(lines)}")
-        for i, line in enumerate(lines):
-            print(f"  [{i:02d}] conf={line[1][1]:.2f} | {line[1][0][:60]}")
-        
-
         def is_hallucination(text):
             if len(text) < 5:
                 return False
-            # Satu karakter mendominasi > 40%
             for ch in set(text.lower()):
                 if text.lower().count(ch) / len(text) > 0.4:
                     return True
-            # Rasio karakter unik < 15%
             if len(set(text.lower())) / len(text) < 0.15:
                 return True
             return False
@@ -185,7 +154,6 @@ class OCRService:
             text = line[1][0]
             conf = line[1][1]
             if is_hallucination(text):
-                print(f"[SKIP] hallucination terdeteksi (conf={conf:.2f}): '{text[:60]}'")
                 continue
             texts.append(text)
             confs.append(conf)
@@ -193,8 +161,7 @@ class OCRService:
         if not texts:
             return "", 0.0
 
-        avg_conf = sum(confs) / len(confs)
-        return " ".join(texts), avg_conf
+        return " ".join(texts), sum(confs) / len(confs)
 
 
     # POST-PROCESSING TEKS                                                
@@ -205,9 +172,32 @@ class OCRService:
         return text.strip()
 
     def _fix_spacing(self, text):
+        # Angka menempel huruf
         text = re.sub(r'([a-zA-Z])(\d)', r'\1 \2', text)
         text = re.sub(r'(\d)([a-zA-Z])', r'\1 \2', text)
+
+        # Huruf kecil diikuti huruf kapital (camelCase dari OCR merge)
+        # Kecuali singkatan seperti "BKP", "PPN", "NPWP", "OCR", "PDF"
         text = re.sub(r'([a-z])([A-Z][a-z])', r'\1 \2', text)
+
+        # Kata menyatu yang diketahui dari dokumen pajak
+        known_merges = [
+            (r'(NPWP)(Pengusaha)',   r'\1 \2'),
+            (r'(NPWP)(Pembeli)',     r'\1 \2'),
+            (r'(Alamat)(Pembeli)',   r'\1 \2'),
+            (r'(Pembeli)(BKP)',      r'\1 \2'),
+            (r'(faktur)(pajak)',     r'\1 \2'),
+            (r'(gambar)(dengan)',    r'\1 \2'),
+            (r'(keterbatasan)(device)', r'\1 \2'),
+            (r'(device)(yang)',      r'\1 \2'),
+            (r'(deploy)(pada)',      r'\1 \2'),
+            (r"(output)('[A-Za-z])", r'\1 \2'),   # output'None → output 'None
+            (r"(Output)('[A-Za-z])", r'\1 \2'),
+        ]
+        for pattern, repl in known_merges:
+            text = re.sub(pattern, repl, text)
+
+        # Normalisasi spasi ganda
         text = re.sub(r' {2,}', ' ', text)
         return text
 
